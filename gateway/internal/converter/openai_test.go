@@ -816,3 +816,21 @@ func TestExtractAnthropicImage_DefaultMediaType(t *testing.T) {
 		t.Fatalf("expected default image/jpeg, got %s", img.MediaType)
 	}
 }
+
+// --- Native reasoning effort passthrough ------------------------------------
+
+func TestConvertOpenAIRequest_ReasoningEffortPassedThrough(t *testing.T) {
+	req := models.ChatCompletionRequest{
+		Model:           "claude-sonnet-5.5",
+		Messages:        []models.ChatMessage{{Role: "user", Content: "hi"}},
+		ReasoningEffort: "high",
+	}
+
+	res, err := ConvertOpenAIRequest(req, testCfg())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.ReasoningEffort != "high" {
+		t.Errorf("ReasoningEffort = %q, want %q", res.ReasoningEffort, "high")
+	}
+}

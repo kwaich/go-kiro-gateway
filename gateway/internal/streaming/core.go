@@ -366,6 +366,17 @@ func parseKiroStreamInternal(ctx context.Context, r io.Reader, opts StreamOption
 
 			for _, evt := range events {
 				switch evt.Type {
+				case parser.EventReasoning:
+					if !send(ctx, ch, KiroEvent{
+						Type:            EventTypeThinking,
+						ThinkingContent: evt.Content,
+					}) {
+						return
+					}
+					if !firstTokenReceived {
+						firstTokenReceived = true
+						firstTokenCancel() // Cancel timeout early.
+					}
 				case parser.EventContent:
 					if thinkingParser != nil {
 						result := thinkingParser.ProcessChunk(evt.Content)
@@ -405,6 +416,22 @@ func parseKiroStreamInternal(ctx context.Context, r io.Reader, opts StreamOption
 							firstTokenCancel() // Cancel timeout early.
 						}
 					}
+
+				case parser.EventRefusal:
+					msg := evt.StopExplanation
+					if msg == "" {
+						msg = "upstream refused to continue the conversation"
+					}
+					if evt.StopCategory != "" {
+						msg = fmt.Sprintf("%s (%s)", msg, evt.StopCategory)
+					}
+					if !send(ctx, ch, KiroEvent{
+						Type:  EventTypeError,
+						Error: fmt.Errorf("Kiro refused to continue: %s", msg),
+					}) {
+						return
+					}
+					return
 
 				case parser.EventToolStart:
 					// Finalize any in-progress tool call before starting the next one.

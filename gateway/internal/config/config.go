@@ -50,6 +50,10 @@ type Config struct {
 	FakeReasoningInitialBuffer int
 	FakeReasoningOpenTags      []string
 
+	// Native reasoning effort applied when a client does not send
+	// reasoning_effort itself (low|medium|high|xhigh|max; empty = model default).
+	DefaultEffort string
+
 	// Truncation
 	TruncationRecovery bool
 
@@ -149,6 +153,9 @@ func Load() (*Config, error) {
 	cfg.FakeReasoningInitialBuffer = envInt("FAKE_REASONING_INITIAL_BUFFER_SIZE", 20)
 	cfg.FakeReasoningOpenTags = envCommaSeparated("FAKE_REASONING_OPEN_TAGS",
 		[]string{"<thinking>", "<think>", "<reasoning>", "<thought>"})
+
+	cfg.DefaultEffort = envEnum("KIRO_DEFAULT_EFFORT", "",
+		[]string{"low", "medium", "high", "xhigh", "max"})
 
 	cfg.TruncationRecovery = envBoolDefault("TRUNCATION_RECOVERY", true)
 

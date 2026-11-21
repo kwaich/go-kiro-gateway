@@ -294,9 +294,9 @@ func SetKiroHeaders(req *http.Request, token, fingerprint, profileARN string) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent",
-		fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/win32#10.0.19044 lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.0.27 m/E KiroIDE-0.11.132-%s", fingerprint))
+		fmt.Sprintf("aws-sdk-js/1.0.34 ua/2.1 os/win32#10.0.19044 lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.0.34 m/E KiroIDE-1.4.236-%s", fingerprint))
 	req.Header.Set("x-amz-user-agent",
-		fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-0.11.132-%s", fingerprint))
+		fmt.Sprintf("aws-sdk-js/1.0.34 KiroIDE-1.4.236-%s", fingerprint))
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
 	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
 	req.Header.Set("amz-sdk-invocation-id", generateUUID())

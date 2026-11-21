@@ -44,6 +44,10 @@ type CollectedResponse struct {
 
 	// Credits is the credit usage from the Kiro API, or nil if not reported.
 	Credits *float64
+
+	// Err records an upstream error event that ended the stream early, so
+	// callers can return an error instead of an empty success response.
+	Err error
 }
 
 // CollectFullResponse consumes all events from the channel and returns a
@@ -79,8 +83,8 @@ func CollectFullResponse(events <-chan KiroEvent) *CollectedResponse {
 			}
 
 		case EventTypeError:
-			// Errors in non-streaming mode are typically handled by the caller.
-			// We stop collecting.
+			// Record the error so the caller can surface it, then stop.
+			resp.Err = event.Error
 			return resp
 
 		case EventTypeDone:

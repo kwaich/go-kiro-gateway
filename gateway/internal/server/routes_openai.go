@@ -138,6 +138,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		ConversationID: conversationID,
 		ProfileARN:     profileARN,
 		InjectThinking: true,
+		Effort:         converted.ReasoningEffort,
 		Cfg:            s.config,
 	}); err != nil {
 		log.Error().Err(err).Msg("Payload build error")
@@ -169,6 +170,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		ConversationID: conversationID,
 		ProfileARN:     profileARN,
 		InjectThinking: true,
+		Effort:         converted.ReasoningEffort,
 		Model:          req.Model,
 		KiroURL:        kiroURL,
 		Stream:         req.Stream,
@@ -263,6 +265,13 @@ func (s *Server) handleOpenAINonStreaming(
 	start time.Time,
 ) {
 	collected := streaming.CollectFullResponse(events)
+
+	// An upstream error (e.g. a refusal) must not be reported as an empty
+	// success response — surface it so callers can react.
+	if collected.Err != nil {
+		s.writeOpenAIUpstreamError(w, collected.Err, start)
+		return
+	}
 
 	openAIResp := streaming.BuildOpenAIResponse(collected, streaming.OpenAINonStreamOptions{
 		Model:                model,

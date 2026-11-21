@@ -27,6 +27,10 @@ type ConvertOpenAIResult struct {
 	Messages     []UnifiedMessage
 	Tools        []UnifiedTool
 	SystemPrompt string
+
+	// ReasoningEffort is the client-requested native effort level, passed
+	// through to the Kiro payload unchanged.
+	ReasoningEffort string
 }
 
 // ---------------------------------------------------------------------------
@@ -48,9 +52,10 @@ func ConvertOpenAIRequest(req models.ChatCompletionRequest, cfg *config.Config) 
 	unifiedTools := convertOpenAITools(req.Tools)
 
 	return &ConvertOpenAIResult{
-		Messages:     unifiedMessages,
-		Tools:        unifiedTools,
-		SystemPrompt: systemPrompt,
+		Messages:        unifiedMessages,
+		Tools:           unifiedTools,
+		SystemPrompt:    systemPrompt,
+		ReasoningEffort: req.ReasoningEffort,
 	}, nil
 }
 

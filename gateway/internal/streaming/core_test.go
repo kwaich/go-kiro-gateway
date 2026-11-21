@@ -697,3 +697,39 @@ func filterByType(events []KiroEvent, typ string) []KiroEvent {
 	}
 	return filtered
 }
+
+// ---------------------------------------------------------------------------
+// Tests: ParseKiroStream — native reasoning events
+// ---------------------------------------------------------------------------
+
+func makeReasoningChunk(text string) []byte {
+	j, _ := json.Marshal(map[string]string{"text": text})
+	return j
+}
+
+func TestParseKiroStream_NativeReasoning(t *testing.T) {
+	data := combineChunks(
+		makeReasoningChunk("Analyzing the problem"),
+		makeReasoningChunk(" step by step."),
+		makeContentChunk("Done"),
+	)
+
+	ch := ParseKiroStream(context.Background(), bytes.NewReader(data), defaultOpts())
+	events := collectEvents(ch)
+
+	thinkingEvents := filterByType(events, EventTypeThinking)
+	if len(thinkingEvents) != 2 {
+		t.Fatalf("expected 2 thinking events, got %d: %+v", len(thinkingEvents), events)
+	}
+	if thinkingEvents[0].ThinkingContent != "Analyzing the problem" {
+		t.Errorf("first thinking = %q, want %q", thinkingEvents[0].ThinkingContent, "Analyzing the problem")
+	}
+	if thinkingEvents[1].ThinkingContent != " step by step." {
+		t.Errorf("second thinking = %q, want %q", thinkingEvents[1].ThinkingContent, " step by step.")
+	}
+
+	contentEvents := filterByType(events, EventTypeContent)
+	if len(contentEvents) != 1 || contentEvents[0].Content != "Done" {
+		t.Fatalf("content events = %+v, want one %q", contentEvents, "Done")
+	}
+}

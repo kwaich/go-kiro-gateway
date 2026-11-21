@@ -30,3 +30,6 @@ specs/*
 # Testing
 build/
 go-kiro-gateway
+
+# Gateway runtime log
+gateway.log

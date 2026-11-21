@@ -20,11 +20,13 @@ import "encoding/json"
 // Event type constants identify the kind of each parsed event.
 const (
 	EventContent      = "content"
+	EventReasoning    = "reasoning"
 	EventToolStart    = "tool_start"
 	EventToolInput    = "tool_input"
 	EventToolStop     = "tool_stop"
 	EventUsage        = "usage"
 	EventContextUsage = "context_usage"
+	EventRefusal      = "refusal"
 )
 
 // KiroStreamEvent represents a single parsed event from the Kiro API
@@ -45,6 +47,12 @@ type KiroStreamEvent struct {
 	ToolInput              string
 	Usage                  *UsageData
 	ContextUsagePercentage float64
+
+	// Set for EventRefusal: the upstream stop reason plus the refusal
+	// category and explanation.
+	StopReason      string
+	StopCategory    string
+	StopExplanation string
 }
 
 // UsageData holds credit consumption information from a usage event.
@@ -63,11 +71,13 @@ type eventPattern struct {
 // on each iteration.
 var knownPatterns = []eventPattern{
 	{`{"content":`, EventContent},
+	{`{"text":`, EventReasoning},
 	{`{"name":`, EventToolStart},
 	{`{"input":`, EventToolInput},
 	{`{"stop":`, EventToolStop},
 	{`{"usage":`, EventUsage},
 	{`{"contextUsagePercentage":`, EventContextUsage},
+	{`{"stopDetails":`, EventRefusal},
 }
 
 // ParseEventStream parses raw bytes from a Kiro API response into a
@@ -246,6 +256,8 @@ func processRawEvent(raw map[string]json.RawMessage, eventType string) *KiroStre
 	switch eventType {
 	case EventContent:
 		return processContentEvent(raw)
+	case EventReasoning:
+		return processReasoningEvent(raw)
 	case EventToolStart:
 		return processToolStartEvent(raw)
 	case EventToolInput:
@@ -256,9 +268,40 @@ func processRawEvent(raw map[string]json.RawMessage, eventType string) *KiroStre
 		return processUsageEvent(raw)
 	case EventContextUsage:
 		return processContextUsageEvent(raw)
+	case EventRefusal:
+		return processRefusalEvent(raw)
 	default:
 		return nil
 	}
+}
+
+// processRefusalEvent extracts the stop reason and refusal details from a
+// stopDetails event. Events without refusal details are skipped.
+func processRefusalEvent(raw map[string]json.RawMessage) *KiroStreamEvent {
+	evt := &KiroStreamEvent{Type: EventRefusal}
+	if v, ok := raw["stopReason"]; ok {
+		if err := json.Unmarshal(v, &evt.StopReason); err != nil {
+			evt.StopReason = string(v)
+		}
+	}
+
+	var details struct {
+		Refusal struct {
+			Category    string `json:"category"`
+			Explanation string `json:"explanation"`
+		} `json:"refusal"`
+	}
+	if v, ok := raw["stopDetails"]; ok {
+		if err := json.Unmarshal(v, &details); err != nil {
+			return nil
+		}
+	}
+	evt.StopCategory = details.Refusal.Category
+	evt.StopExplanation = details.Refusal.Explanation
+	if evt.StopCategory == "" && evt.StopExplanation == "" {
+		return nil
+	}
+	return evt
 }
 
 // processContentEvent extracts text content from a content event.
@@ -280,6 +323,23 @@ func processContentEvent(raw map[string]json.RawMessage) *KiroStreamEvent {
 	}
 }
 
+// processReasoningEvent extracts a reasoningContentEvent text fragment.
+// These arrive as deltas and carry no role; empty fragments are skipped.
+func processReasoningEvent(raw map[string]json.RawMessage) *KiroStreamEvent {
+	var text string
+	if v, ok := raw["text"]; ok {
+		_ = json.Unmarshal(v, &text)
+	}
+	if text == "" {
+		return nil
+	}
+
+	return &KiroStreamEvent{
+		Type:    EventReasoning,
+		Content: text,
+	}
+}
+
 // processToolStartEvent extracts the tool name and use ID from a
 // tool start event.
 func processToolStartEvent(raw map[string]json.RawMessage) *KiroStreamEvent {
@@ -289,6 +349,21 @@ func processToolStartEvent(raw map[string]json.RawMessage) *KiroStreamEvent {
 	}
 	if v, ok := raw["toolUseId"]; ok {
 		_ = json.Unmarshal(v, &toolUseID)
+	}
+
+	// The terminal toolUseEvent carries both "name" and "stop": true. It is
+	// matched by the {"name": pattern before {"stop":, so it must be
+	// classified here or it would be re-emitted as a duplicate tool start.
+	var stop bool
+	if v, ok := raw["stop"]; ok {
+		_ = json.Unmarshal(v, &stop)
+	}
+	if stop {
+		return &KiroStreamEvent{
+			Type:      EventToolStop,
+			ToolName:  name,
+			ToolUseID: toolUseID,
+		}
 	}
 
 	return &KiroStreamEvent{

@@ -50,6 +50,7 @@ type sizeRecoveryParams struct {
 	ProfileARN     string
 	InjectThinking bool
 	Thinking       *converter.ThinkingConfig
+	Effort         string // native effort level (low|medium|high|xhigh|max)
 
 	// Fields needed to send the request.
 	Model          string // public model name for the backend request
@@ -137,6 +138,7 @@ func (s *Server) completeWithSizeRecovery(
 			ProfileARN:     p.ProfileARN,
 			InjectThinking: p.InjectThinking,
 			Thinking:       p.Thinking,
+			Effort:         p.Effort,
 			Cfg:            s.config,
 		})
 		if err != nil {

@@ -69,6 +69,7 @@ type BuildKiroPayloadOptions struct {
 	ProfileARN     string
 	InjectThinking bool
 	Thinking       *ThinkingConfig // Native extended thinking configuration
+	Effort         string          // Native effort level (low|medium|high|xhigh|max)
 	Cfg            *config.Config
 }
 
@@ -250,13 +251,6 @@ func BuildKiroPayload(opts BuildKiroPayloadOptions) (*KiroPayloadResult, error) 
 	if len(userInputCtx) > 0 {
 		userInputMessage["userInputMessageContext"] = userInputCtx
 	}
-	// Add native extended thinking configuration if provided.
-	if opts.Thinking != nil && opts.Thinking.Type == "enabled" {
-		userInputMessage["thinking"] = map[string]any{
-			"type":          opts.Thinking.Type,
-			"budget_tokens": opts.Thinking.BudgetTokens,
-		}
-	}
 
 	// Assemble final payload.
 	convState := map[string]any{
@@ -273,6 +267,11 @@ func BuildKiroPayload(opts BuildKiroPayloadOptions) (*KiroPayloadResult, error) 
 	payload := map[string]any{
 		"conversationState": convState,
 	}
+	// Native thinking/effort ride in a top-level field; the model schema
+	// rejects them anywhere inside conversationState.
+	if extra := buildAdditionalModelRequestFields(opts); len(extra) > 0 {
+		payload["additionalModelRequestFields"] = extra
+	}
 	if opts.ProfileARN != "" {
 		payload["profileArn"] = opts.ProfileARN
 	}
@@ -283,11 +282,38 @@ func BuildKiroPayload(opts BuildKiroPayloadOptions) (*KiroPayloadResult, error) 
 	}, nil
 }
 
+// buildAdditionalModelRequestFields builds the top-level native thinking and
+// effort configuration accepted by the Kiro API. Per the model schema, only
+// thinking.type (adaptive|between_tools) and output_config.effort are allowed
+// there; anything inside conversationState is ignored upstream.
+func buildAdditionalModelRequestFields(opts BuildKiroPayloadOptions) map[string]any {
+	fields := map[string]any{}
+	if opts.Thinking != nil && opts.Thinking.Type == "enabled" {
+		fields["thinking"] = adaptiveThinking()
+	}
+	effort := opts.Effort
+	if effort == "" && opts.Cfg != nil {
+		effort = opts.Cfg.DefaultEffort
+	}
+	if effort != "" {
+		fields["output_config"] = map[string]any{"effort": effort}
+		// Effort is only honoured alongside thinking; enable it if the
+		// caller asked for effort without an explicit thinking config.
+		if _, ok := fields["thinking"]; !ok {
+			fields["thinking"] = adaptiveThinking()
+		}
+	}
+	return fields
+}
+
+// adaptiveThinking is the thinking configuration Kiro's current models accept.
+func adaptiveThinking() map[string]any {
+	return map[string]any{"type": "adaptive", "display": "summarized"}
+}
+
 // ---------------------------------------------------------------------------
 // JSON schema sanitisation
-// ---------------------------------------------------------------------------
-
-// SanitizeJSONSchema recursively removes fields that the Kiro API rejects:
+// ---------------------------------------------------------------------------// SanitizeJSONSchema recursively removes fields that the Kiro API rejects:
 //   - empty "required" arrays
 //   - "additionalProperties" at any level
 //

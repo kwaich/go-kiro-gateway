@@ -144,6 +144,9 @@ func TestCollectFullResponse_ErrorStopsCollection(t *testing.T) {
 	if resp.Content != "partial" {
 		t.Errorf("content = %q, want 'partial'", resp.Content)
 	}
+	if resp.Err == nil {
+		t.Error("expected Err to be set so callers can surface the failure")
+	}
 }
 
 // ---------------------------------------------------------------------------

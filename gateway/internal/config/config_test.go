@@ -1110,3 +1110,41 @@ func TestLoad_OpenAIAPIMode_InvalidFallsBackToResponses(t *testing.T) {
 		t.Errorf("OpenAIAPIMode for invalid value = %q, want %q (fallback)", cfg.OpenAIAPIMode, "responses")
 	}
 }
+
+func TestLoad_DefaultEffort(t *testing.T) {
+	clearConfigEnvVars(t)
+	setCredentialSource(t)
+
+	origArgs := os.Args
+	os.Args = []string{"gateway"}
+	defer func() { os.Args = origArgs }()
+
+	t.Setenv("KIRO_DEFAULT_EFFORT", "xhigh")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.DefaultEffort != "xhigh" {
+		t.Errorf("DefaultEffort = %q, want %q", cfg.DefaultEffort, "xhigh")
+	}
+}
+
+func TestLoad_InvalidDefaultEffortIgnored(t *testing.T) {
+	clearConfigEnvVars(t)
+	setCredentialSource(t)
+
+	origArgs := os.Args
+	os.Args = []string{"gateway"}
+	defer func() { os.Args = origArgs }()
+
+	t.Setenv("KIRO_DEFAULT_EFFORT", "bogus")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.DefaultEffort != "" {
+		t.Errorf("DefaultEffort = %q, want empty for invalid value", cfg.DefaultEffort)
+	}
+}

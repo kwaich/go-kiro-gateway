@@ -922,40 +922,6 @@ func TestBuildKiroPayload_ThinkingInjection(t *testing.T) {
 	}
 }
 
-func TestBuildKiroPayload_NativeThinkingConfig(t *testing.T) {
-	cfg := testCfg()
-	cfg.FakeReasoningEnabled = false
-
-	result, err := BuildKiroPayload(BuildKiroPayloadOptions{
-		Messages:       []UnifiedMessage{{Role: "user", Content: "Hello"}},
-		ConversationID: "c1",
-		InjectThinking: false,
-		Thinking: &ThinkingConfig{
-			Type:         "enabled",
-			BudgetTokens: 10000,
-		},
-		Cfg: cfg,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	convState := result.Payload["conversationState"].(map[string]any)
-	currentMsg := convState["currentMessage"].(map[string]any)
-	userInput := currentMsg["userInputMessage"].(map[string]any)
-
-	thinking, ok := userInput["thinking"].(map[string]any)
-	if !ok {
-		t.Fatal("expected thinking config in userInputMessage")
-	}
-	if thinking["type"] != "enabled" {
-		t.Errorf("thinking type = %v, want enabled", thinking["type"])
-	}
-	if thinking["budget_tokens"] != 10000 {
-		t.Errorf("thinking budget_tokens = %v, want 10000", thinking["budget_tokens"])
-	}
-}
-
 func TestBuildKiroPayload_NativeThinkingConfigDisabled(t *testing.T) {
 	cfg := testCfg()
 	cfg.FakeReasoningEnabled = false
@@ -979,6 +945,9 @@ func TestBuildKiroPayload_NativeThinkingConfigDisabled(t *testing.T) {
 
 	if _, ok := userInput["thinking"]; ok {
 		t.Fatal("thinking config should not be present when type is disabled")
+	}
+	if _, ok := result.Payload["additionalModelRequestFields"]; ok {
+		t.Fatal("additionalModelRequestFields should be omitted when thinking is disabled")
 	}
 }
 
@@ -1229,5 +1198,147 @@ func TestBuildKiroHistory_PreservesWriteToolInput(t *testing.T) {
 	originalInput := msgs[0].ToolCalls[0]["input"].(map[string]any)
 	if originalInput["content"] != largeContent {
 		t.Fatal("building Kiro history mutated the original Write tool input")
+	}
+}
+
+// --- Native thinking / effort (additionalModelRequestFields) ----------------
+
+func TestBuildKiroPayload_EffortGoesToAdditionalModelRequestFields(t *testing.T) {
+	cfg := testCfg()
+	cfg.FakeReasoningEnabled = false
+
+	result, err := BuildKiroPayload(BuildKiroPayloadOptions{
+		Messages:       []UnifiedMessage{{Role: "user", Content: "hi"}},
+		ModelID:        "claude-sonnet-5.5",
+		ConversationID: "c1",
+		Effort:         "high",
+		InjectThinking: false,
+		Cfg:            cfg,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	amf, ok := result.Payload["additionalModelRequestFields"].(map[string]any)
+	if !ok {
+		t.Fatalf("additionalModelRequestFields missing from payload: %v", result.Payload)
+	}
+	outputCfg, ok := amf["output_config"].(map[string]any)
+	if !ok || outputCfg["effort"] != "high" {
+		t.Errorf("output_config = %v, want effort=high", amf["output_config"])
+	}
+	thinkingCfg, ok := amf["thinking"].(map[string]any)
+	if !ok || thinkingCfg["type"] != "adaptive" {
+		t.Errorf("thinking = %v, want type=adaptive", amf["thinking"])
+	}
+
+	convState := result.Payload["conversationState"].(map[string]any)
+	curMsg := convState["currentMessage"].(map[string]any)
+	userInput := curMsg["userInputMessage"].(map[string]any)
+	if _, ok := userInput["thinking"]; ok {
+		t.Error("userInputMessage must not carry thinking; it is ignored upstream")
+	}
+}
+
+func TestBuildKiroPayload_ThinkingMapsToAdaptive(t *testing.T) {
+	cfg := testCfg()
+	cfg.FakeReasoningEnabled = false
+
+	result, err := BuildKiroPayload(BuildKiroPayloadOptions{
+		Messages:       []UnifiedMessage{{Role: "user", Content: "hi"}},
+		ModelID:        "claude-sonnet-5.5",
+		ConversationID: "c1",
+		Thinking:       &ThinkingConfig{Type: "enabled", BudgetTokens: 4000},
+		InjectThinking: false,
+		Cfg:            cfg,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	amf, ok := result.Payload["additionalModelRequestFields"].(map[string]any)
+	if !ok {
+		t.Fatalf("additionalModelRequestFields missing from payload: %v", result.Payload)
+	}
+	thinkingCfg, ok := amf["thinking"].(map[string]any)
+	if !ok || thinkingCfg["type"] != "adaptive" {
+		t.Fatalf("thinking = %v, want type=adaptive", amf["thinking"])
+	}
+	if _, ok := thinkingCfg["budget_tokens"]; ok {
+		t.Error("budget_tokens is not in the model schema; it must not be sent")
+	}
+}
+
+func TestBuildKiroPayload_DefaultEffortFromConfig(t *testing.T) {
+	cfg := testCfg()
+	cfg.FakeReasoningEnabled = false
+	cfg.DefaultEffort = "medium"
+
+	result, err := BuildKiroPayload(BuildKiroPayloadOptions{
+		Messages:       []UnifiedMessage{{Role: "user", Content: "hi"}},
+		ModelID:        "claude-sonnet-5.5",
+		ConversationID: "c1",
+		Cfg:            cfg,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	amf, ok := result.Payload["additionalModelRequestFields"].(map[string]any)
+	if !ok {
+		t.Fatalf("additionalModelRequestFields missing from payload: %v", result.Payload)
+	}
+	outputCfg, ok := amf["output_config"].(map[string]any)
+	if !ok || outputCfg["effort"] != "medium" {
+		t.Errorf("output_config = %v, want effort=medium", amf["output_config"])
+	}
+	thinkingCfg, ok := amf["thinking"].(map[string]any)
+	if !ok || thinkingCfg["type"] != "adaptive" {
+		t.Errorf("thinking = %v, want type=adaptive", amf["thinking"])
+	}
+}
+
+func TestBuildKiroPayload_ExplicitEffortBeatsDefault(t *testing.T) {
+	cfg := testCfg()
+	cfg.FakeReasoningEnabled = false
+	cfg.DefaultEffort = "max"
+
+	result, err := BuildKiroPayload(BuildKiroPayloadOptions{
+		Messages:       []UnifiedMessage{{Role: "user", Content: "hi"}},
+		ModelID:        "claude-sonnet-5.5",
+		ConversationID: "c1",
+		Effort:         "low",
+		Cfg:            cfg,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	amf, ok := result.Payload["additionalModelRequestFields"].(map[string]any)
+	if !ok {
+		t.Fatalf("additionalModelRequestFields missing from payload: %v", result.Payload)
+	}
+	outputCfg, ok := amf["output_config"].(map[string]any)
+	if !ok || outputCfg["effort"] != "low" {
+		t.Errorf("output_config = %v, want effort=low (explicit beats default)", amf["output_config"])
+	}
+}
+
+func TestBuildKiroPayload_NoDefaultEffortSendsNothing(t *testing.T) {
+	cfg := testCfg()
+	cfg.FakeReasoningEnabled = false
+
+	result, err := BuildKiroPayload(BuildKiroPayloadOptions{
+		Messages:       []UnifiedMessage{{Role: "user", Content: "hi"}},
+		ModelID:        "claude-sonnet-5.5",
+		ConversationID: "c1",
+		Cfg:            cfg,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := result.Payload["additionalModelRequestFields"]; ok {
+		t.Errorf("additionalModelRequestFields must be absent when no effort is configured")
 	}
 }

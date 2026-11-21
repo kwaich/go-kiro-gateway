@@ -596,3 +596,72 @@ func TestParseEventStream_ReturnsRemainderOnIncompleteJSON(t *testing.T) {
 		t.Errorf("expected empty remainder, got %q", remaining2)
 	}
 }
+
+// --- ParseEventStream: refusal stop details --------------------------------
+
+func TestParseEventStream_RefusalStopDetails(t *testing.T) {
+	data := []byte(`{"stopDetails":{"refusal":{"category":"REASONING_EXTRACTION","explanation":"The selected model cannot continue this conversation."}},"stopReason":"CONTENT_FILTERED"}`)
+	events, _ := ParseEventStream(data)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != EventRefusal {
+		t.Fatalf("expected type %s, got %s", EventRefusal, events[0].Type)
+	}
+	if events[0].StopReason != "CONTENT_FILTERED" {
+		t.Errorf("stop reason = %q, want CONTENT_FILTERED", events[0].StopReason)
+	}
+	if events[0].StopCategory != "REASONING_EXTRACTION" {
+		t.Errorf("stop category = %q, want REASONING_EXTRACTION", events[0].StopCategory)
+	}
+	if events[0].StopExplanation == "" {
+		t.Error("expected non-empty stop explanation")
+	}
+}
+
+// --- ParseEventStream: native reasoning events -------------------------------
+
+func TestParseEventStream_ReasoningEvents(t *testing.T) {
+	data := []byte(`{"text":"Let me think"}{"text":" it through."}{"content":"Answer"}`)
+	events, _ := ParseEventStream(data)
+
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d: %+v", len(events), events)
+	}
+	if events[0].Type != EventReasoning || events[0].Content != "Let me think" {
+		t.Errorf("event 0 = {%s %q}, want {reasoning %q}", events[0].Type, events[0].Content, "Let me think")
+	}
+	if events[1].Type != EventReasoning || events[1].Content != " it through." {
+		t.Errorf("event 1 = {%s %q}, want {reasoning %q}", events[1].Type, events[1].Content, " it through.")
+	}
+	if events[2].Type != EventContent || events[2].Content != "Answer" {
+		t.Errorf("event 2 = {%s %q}, want {content %q}", events[2].Type, events[2].Content, "Answer")
+	}
+}
+
+func TestParseEventStream_RepeatedReasoningFragmentsKept(t *testing.T) {
+	data := []byte(`{"text":"ha"}{"text":"ha"}`)
+	events, _ := ParseEventStream(data)
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 reasoning events (no dedupe), got %d", len(events))
+	}
+}
+
+// TestParseEventStream_ToolStopWithName covers the terminal toolUseEvent,
+// which carries both "name" and "stop": true. The ordered pattern list matches
+// {"name": first, so this payload used to be emitted as a second tool start
+// with the same toolUseId (duplicate tool call).
+func TestParseEventStream_ToolStopWithName(t *testing.T) {
+	data := []byte(`{"name":"list","stop":true,"toolUseId":"toolu_1"}`)
+
+	events, _ := ParseEventStream(data)
+
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].Type != EventToolStop {
+		t.Errorf("event type = %q, want %q", events[0].Type, EventToolStop)
+	}
+}

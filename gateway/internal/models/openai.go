@@ -20,6 +20,11 @@ type ChatCompletionRequest struct {
 	MaxTokens   *int          `json:"max_tokens,omitempty"`
 	Tools       []Tool        `json:"tools,omitempty"`
 	ToolChoice  any           `json:"tool_choice,omitempty"`
+
+	// ReasoningEffort requests native thinking at the given effort level
+	// (low|medium|high|xhigh|max). Mapped to the Kiro model's
+	// output_config.effort.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 // ChatMessage represents a single message in the OpenAI chat format.
